@@ -1,8 +1,29 @@
 ## paste-tool
 
-Paste smarter. paste-tool is a tiny, dependency-free browser helper that makes paste handlers reliable and delightful: extract rich text cleanly (HTML/RTF/plain), or merge multiple pasted images into a single layout-preserving image Blob.
+_Read this in: [English](./README.md) · [中文](./README.zh-CN.md)_
 
-It targets scenarios where users paste from complex sources (Excel, Word, remote desktops, screenshots) and you want a consistent payload for uploads, previews, or editor insertion.
+[![npm version](https://img.shields.io/badge/npm-v0.0.1-blue)](#) [![license](https://img.shields.io/badge/license-MIT-green)](#)
+
+Paste smarter — a tiny, dependency-free browser helper that makes paste handlers reliable and delightful: extract rich text (HTML/RTF/plain), or merge multiple pasted images into a single, layout-preserving image Blob.
+
+Use cases: copying from Excel/Word, screenshots from remote desktops, or combining multiple screenshots into one upload-ready image for editors and web apps.
+
+## Table of contents
+
+- Installation
+- Quick start
+- API
+- Examples
+  - Text paste
+  - Image paste
+  - Image fallback
+- Playground
+- Features
+- FAQ
+- Contributing
+- Development
+- License
+- 中文说明
 
 ## Installation
 
