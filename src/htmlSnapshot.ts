@@ -29,17 +29,29 @@ export async function renderHtmlFragmentToImage(html: string, options: HtmlSnaps
   if (!html)
     return null
 
-  const plan = prepareHtmlSnapshot(html)
+  const mimeType = options.mimeType ?? 'image/png'
+  const normalizedOptions: HtmlSnapshotOptions = { ...options, mimeType }
+
+  const plan = prepareHtmlSnapshot(html, mimeType)
   if (!plan)
     return null
 
   const svgMarkup = buildForeignObjectSvg(plan)
-  return await rasterizeSvgMarkup(svgMarkup, plan.width, plan.height, options)
+  return await rasterizeSvgMarkup(svgMarkup, plan.width, plan.height, normalizedOptions)
 }
 
-function prepareHtmlSnapshot(html: string): HtmlSnapshotPlan | null {
-  if (typeof document === 'undefined' || !document.body)
+function prepareHtmlSnapshot(html: string, mimeType: string): HtmlSnapshotPlan | null {
+  if (typeof document === 'undefined' || !document.body) {
+    if (mimeType === 'image/svg+xml') {
+      const markup = wrapInlineHtmlForSvg(html)
+      return {
+        width: HTML_SNAPSHOT_DEFAULT_WIDTH,
+        height: HTML_SNAPSHOT_DEFAULT_HEIGHT,
+        markup,
+      }
+    }
     return null
+  }
 
   const sandbox = document.createElement('div')
   sandbox.style.position = 'fixed'
@@ -86,6 +98,10 @@ function prepareHtmlSnapshot(html: string): HtmlSnapshotPlan | null {
   finally {
     document.body.removeChild(sandbox)
   }
+}
+
+function wrapInlineHtmlForSvg(html: string): string {
+  return `<div xmlns="http://www.w3.org/1999/xhtml" style="display:inline-block">${html}</div>`
 }
 
 function buildForeignObjectSvg(plan: HtmlSnapshotPlan): string {
