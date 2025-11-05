@@ -57,18 +57,18 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^4.14.1",
+    "@antfu/eslint-config": "^4.19.0",
     "@sxzz/prettier-config": "^2.2.1",
-    "@types/node": "^18.19.111",
+    "@types/node": "^18.19.130",
     "bumpp": "^8.2.1",
-    "eslint": "^9.28.0",
+    "eslint": "^9.39.1",
     "lint-staged": "^13.3.0",
     "picocolors": "^1.1.1",
-    "prettier": "^3.5.3",
+    "prettier": "^3.6.2",
     "rimraf": "^3.0.2",
     "tsdown": "^0.9.9",
     "tsx": "^3.14.0",
-    "typescript": "^5.5.4",
+    "typescript": "^5.9.3",
     "vitest": "^0.15.2"
   },
   "lint-staged": {
