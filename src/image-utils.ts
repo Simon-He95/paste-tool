@@ -5,8 +5,14 @@ export function isHtmlImageElement(value: LoadedBitmap): value is HTMLImageEleme
 }
 
 export async function loadBitmap(blob: Blob): Promise<LoadedBitmap> {
-  if (typeof createImageBitmap === 'function')
-    return await createImageBitmap(blob)
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(blob)
+    }
+    catch {
+      // Fall back to DOM image decoding when createImageBitmap cannot handle the source blob.
+    }
+  }
 
   return await blobToHtmlImage(blob)
 }
