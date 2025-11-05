@@ -87,9 +87,12 @@ export async function onPaste(
     const blobs = payload.blobs
     const layoutHtml = payload.html
 
-    if (blobs.length === 0)
+    if (blobs.length === 0) {
+      const fallbackText = await extractText({ event })
+      if (fallbackText !== null)
+        return fallbackText
       throw new Error('No image data found in clipboard.')
-
+    }
     if (blobs.length === 1) {
       if (!layoutHtml)
         return blobs[0]
