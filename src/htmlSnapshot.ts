@@ -11,6 +11,12 @@ const HTML_SNAPSHOT_DEFAULT_HEIGHT = 512
 
 export interface HtmlSnapshotOptions {
   log?: (message: string, error: unknown) => void
+  /**
+   * Desired MIME type for the resulting blob. Defaults to `image/png`.
+   * Use `image/jpeg` for lossy output, or `image/svg+xml` to skip rasterization
+   * and return the serialized SVG directly.
+   */
+  mimeType?: string
 }
 
 interface HtmlSnapshotPlan {
@@ -28,7 +34,7 @@ export async function renderHtmlFragmentToImage(html: string, options: HtmlSnaps
     return null
 
   const svgMarkup = buildForeignObjectSvg(plan)
-  return await rasterizeSvgMarkup(svgMarkup, plan.width, plan.height, options.log)
+  return await rasterizeSvgMarkup(svgMarkup, plan.width, plan.height, options)
 }
 
 function prepareHtmlSnapshot(html: string): HtmlSnapshotPlan | null {
@@ -88,11 +94,26 @@ function buildForeignObjectSvg(plan: HtmlSnapshotPlan): string {
   return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%" requiredExtensions="http://www.w3.org/1999/xhtml">${plan.markup}</foreignObject></svg>`
 }
 
-async function rasterizeSvgMarkup(svgMarkup: string, width: number, height: number, log?: (message: string, error: unknown) => void): Promise<Blob | null> {
+async function rasterizeSvgMarkup(svgMarkup: string, width: number, height: number, options: HtmlSnapshotOptions): Promise<Blob | null> {
+  const { log, mimeType } = options
+  const targetMime = mimeType ?? 'image/png'
+
+  if (targetMime === 'image/svg+xml') {
+    try {
+      return new Blob([svgMarkup], { type: 'image/svg+xml' })
+    }
+    catch (error) {
+      log?.('Failed to serialize SVG snapshot.', error)
+      return null
+    }
+  }
+
   try {
     const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml' })
-    if (!canUseCanvas2D())
+    if (!canUseCanvas2D()) {
+      log?.('Canvas 2D context unavailable; returning SVG snapshot.', null)
       return svgBlob
+    }
 
     const bitmap = await loadBitmap(svgBlob)
     try {
@@ -110,7 +131,7 @@ async function rasterizeSvgMarkup(svgMarkup: string, width: number, height: numb
         ctx.restore()
         ctx.drawImage(bitmap as CanvasImageSource, 0, 0)
 
-        return await canvasToBlob(canvas, 'image/png')
+        return await canvasToBlob(canvas, targetMime)
       }
       finally {
         if (restoreConsole)
@@ -126,7 +147,8 @@ async function rasterizeSvgMarkup(svgMarkup: string, width: number, height: numb
   }
 
   try {
-    return new Blob([svgMarkup], { type: 'image/svg+xml' })
+    const fallbackType = targetMime === 'image/svg+xml' ? 'image/svg+xml' : 'image/svg+xml'
+    return new Blob([svgMarkup], { type: fallbackType })
   }
   catch {
     return null

@@ -37,6 +37,11 @@ yarn add paste-tool
 
 库暴露单一函数 `onPaste(isImage, event)`，根据 `isImage` 返回图片 `Blob` 或文本对象 `ClipboardTextPayload`。
 
+interface HtmlSnapshotOptions {
+  log?: (message: string, error: unknown) => void
+  mimeType?: string // 默认为 image/png；可指定 image/jpeg 或 image/svg+xml（直接返回 SVG）
+}
+
 #### 处理文本粘贴
 
 ```ts
@@ -133,7 +138,7 @@ interface ClipboardTextPayload {
 
 失败时 Promise 会以错误信息拒绝（说明没有可用数据）。
 
-另提供 `renderHtmlToImage(html: string, options?: HtmlSnapshotOptions): Promise<Blob>`，用于手动将任意 HTML 片段渲染成图片；可通过 `options.log` 自定义错误日志。
+另提供 `renderHtmlToImage(html: string, options?: HtmlSnapshotOptions): Promise<Blob>`，用于手动将任意 HTML 片段渲染成图片；可通过 `options.log` 自定义错误日志，或设置 `options.mimeType`（如 `image/jpeg` / `image/svg+xml`）控制输出格式。
 
 ### Playground
 

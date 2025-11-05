@@ -160,6 +160,11 @@ interface PasteOptions {
   enableHtmlSnapshot?: boolean // default true; rasterize HTML when blobs are missing
   htmlSnapshotOptions?: HtmlSnapshotOptions // forwarded to renderHtmlToImage
 }
+
+interface HtmlSnapshotOptions {
+  log?: (message: string, error: unknown) => void
+  mimeType?: string // image/png (default), image/jpeg, or image/svg+xml for passthrough
+}
 ```
 
 ```ts
@@ -174,7 +179,7 @@ interface ClipboardTextPayload {
 }
 ```
 
-`renderHtmlToImage(html: string, options?: HtmlSnapshotOptions): Promise<Blob>` converts arbitrary HTML fragments into an image. Supply `options.log` to customize error reporting.
+`renderHtmlToImage(html: string, options?: HtmlSnapshotOptions): Promise<Blob>` converts arbitrary HTML fragments into an image. Supply `options.log` to customize error reporting, or set `options.mimeType` to `image/jpeg` / `image/svg+xml` when you need lossy output or SVG passthrough.
 Rejected promises carry an error explaining why no data was found.
 
 ## FAQ
