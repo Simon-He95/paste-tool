@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "baseUrl": "./",
+    "paths": {
+      "paste-tool": ["../../src/index.ts"]
+    },
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*", "env.d.ts"]
+}

@@ -6,6 +6,7 @@ const RTF_MIME = 'text/rtf'
 const PLAIN_MIME = 'text/plain'
 // Prefer richer formats to keep layout when available.
 const TEXT_MIME_PRIORITY = [HTML_MIME, RTF_MIME, PLAIN_MIME] as const
+const IMAGE_TYPE_PREFERENCE = ['image/png', 'image/webp', 'image/jpeg']
 const HTML_BREAK_SPLIT_PATTERN = /<br\s*(?:\/\s*)?>/i
 const HTML_IMG_TAG_PATTERN = /<img\b/gi
 const LINE_BREAK_TEST_PATTERN = /[\r\n]/
@@ -79,10 +80,12 @@ export async function onPaste(
   assertBrowserEnvironment()
 
   if (isImage) {
-    const fromEvent = collectImagesFromEvent(event)
-    const fromNavigator = fromEvent.blobs.length > 0 ? null : await collectImagesFromNavigator()
-    const blobs = [...fromEvent.blobs, ...(fromNavigator?.blobs ?? [])]
-    const layoutHtml = fromEvent.html ?? fromNavigator?.html ?? null
+    let payload = collectImagesFromEvent(event)
+    if (payload.blobs.length === 0)
+      payload = await collectImagesFromNavigator()
+
+    const blobs = payload.blobs
+    const layoutHtml = payload.html
 
     if (blobs.length === 0)
       throw new Error('No image data found in clipboard.')
@@ -122,19 +125,26 @@ function collectImagesFromEvent(event?: ClipboardEvent | null): ClipboardImagePa
   return { blobs, html }
 }
 
-async function collectImagesFromNavigator(): Promise<ClipboardImagePayload | null> {
-  if (typeof navigator === 'undefined' || !navigator.clipboard)
-    return null
+async function collectImagesFromNavigator(): Promise<ClipboardImagePayload> {
+  const blobs: Blob[] = []
+  let html: string | null = null
+  if (typeof navigator === 'undefined' || !navigator.clipboard) {
+    return {
+      blobs,
+      html,
+    }
+  }
 
   const clipboard = navigator.clipboard as Clipboard & {
     read?: () => Promise<ClipboardItem[]>
   }
 
-  if (typeof clipboard.read !== 'function')
-    return null
-
-  const blobs: Blob[] = []
-  let html: string | null = null
+  if (typeof clipboard.read !== 'function') {
+    return {
+      blobs,
+      html,
+    }
+  }
   try {
     const items = await clipboard.read()
     const payloads = await Promise.all(items.map(item => collectBlobsFromClipboardItem(item)))
@@ -148,31 +158,38 @@ async function collectImagesFromNavigator(): Promise<ClipboardImagePayload | nul
     logClipboardWarning('navigator.clipboard.read failed', error)
   }
 
-  if (blobs.length === 0)
-    return null
-
   return { blobs, html }
 }
 
 function collectBlobsFromDataTransfer(data: DataTransfer): Blob[] {
   const blobs: Blob[] = []
+  const seen = new Set<string>()
+
+  const addFile = (file: File | null) => {
+    if (!file || !file.type.startsWith(IMAGE_MIME_PREFIX))
+      return
+
+    const key = `${file.type}:${file.size}:${file.lastModified}`
+    if (seen.has(key))
+      return
+    seen.add(key)
+    blobs.push(file)
+  }
 
   const items = data.items
-  if (items) {
+  if (items && items.length > 0) {
     for (let index = 0; index < items.length; index++) {
       const item = items[index]
-      const file = item.getAsFile()
-      if (file && file.type.startsWith(IMAGE_MIME_PREFIX))
-        blobs.push(file)
+      if (item.kind === 'file')
+        addFile(item.getAsFile())
     }
+    return blobs
   }
 
   const files = data.files
   if (files) {
     for (let index = 0; index < files.length; index++) {
-      const file = files.item(index)
-      if (file && file.type.startsWith(IMAGE_MIME_PREFIX))
-        blobs.push(file)
+      addFile(files.item(index))
     }
   }
 
@@ -182,13 +199,30 @@ function collectBlobsFromDataTransfer(data: DataTransfer): Blob[] {
 async function collectBlobsFromClipboardItem(item: ClipboardItem): Promise<ClipboardImagePayload> {
   const blobs: Blob[] = []
   let html: string | null = null
+  const preferredImageType = selectPreferredImageType(item.types)
+
+  if (preferredImageType)
+    blobs.push(await item.getType(preferredImageType))
+
   for (const type of item.types) {
-    if (type.startsWith(IMAGE_MIME_PREFIX))
-      blobs.push(await item.getType(type))
-    else if (!html && type === HTML_MIME)
+    if (type === HTML_MIME && !html)
       html = await (await item.getType(type)).text()
   }
   return { blobs, html }
+}
+
+function selectPreferredImageType(types: readonly string[]): string | null {
+  for (const candidate of IMAGE_TYPE_PREFERENCE) {
+    if (types.includes(candidate))
+      return candidate
+  }
+
+  for (const type of types) {
+    if (type.startsWith(IMAGE_MIME_PREFIX))
+      return type
+  }
+
+  return null
 }
 
 async function extractText({ event }: { event?: ClipboardEvent | null }): Promise<string | null> {

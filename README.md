@@ -61,6 +61,17 @@ When multiple images are detected, the library infers the clipboard layout (tabl
 
 If the synchronous `ClipboardEvent` lacks the needed data, the helper falls back to `navigator.clipboard.read()` / `readText()` (where supported). Error logs are emitted only in development environments.
 
+## Playground
+
+A Vue playground lives in `playground/vue` for manual testing. Run it with:
+
+```bash
+pnpm install
+pnpm --filter paste-tool-playground dev
+```
+
+This launches Vite on `http://localhost:5173`, where you can paste rich text or multiple images to inspect the results live.
+
 ## API
 
 `onPaste(isImage: boolean, event?: ClipboardEvent | null): Promise<Blob | string>`
