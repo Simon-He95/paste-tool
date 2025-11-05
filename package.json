@@ -1,7 +1,7 @@
 {
   "name": "paste-tool",
   "type": "module",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Tiny browser paste helper — extract rich text or merge multiple pasted images into a single, layout-preserving Blob.",
   "author": "Simon He <simonhe.me>",
   "license": "MIT",
