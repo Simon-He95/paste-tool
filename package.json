@@ -1,18 +1,27 @@
 {
-  "name": "paste-toolpack",
+  "name": "paste-tool",
   "type": "module",
   "version": "0.0.1",
-  "description": "",
-  "author": "Simon He",
+  "description": "Tiny browser paste helper — extract rich text or merge multiple pasted images into a single, layout-preserving Blob.",
+  "author": "Simon He <simonhe.me>",
   "license": "MIT",
   "funding": "https://github.com/sponsors/Simon-He95",
-  "homepage": "https://github.com/Simon-He95/copy-helper#readme",
+  "homepage": "https://github.com/Simon-He95/paste-tool#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Simon-He95/copy-helper.git"
+    "url": "git+https://github.com/Simon-He95/paste-tool.git"
   },
-  "bugs": "https://github.com/Simon-He95/copy-helper/issues",
-  "keywords": [],
+  "bugs": {
+    "url": "https://github.com/Simon-He95/paste-tool/issues"
+  },
+  "keywords": [
+    "clipboard",
+    "paste",
+    "paste-tool",
+    "clipboard-image",
+    "rich-text",
+    "paste-handler"
+  ],
   "sideEffects": false,
   "exports": {
     ".": {
@@ -31,20 +40,17 @@
       ]
     }
   },
-  "bin": {
-    "run": "./cli.mjs"
-  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsdown",
-    "dev": "npm run build -- --watch src",
+  "build": "tsdown",
+  "dev": "pnpm run build -- --watch src",
     "play": "pnpm --filter paste-tool-playground dev",
     "format": "prettier --cache --write .",
     "lint": "eslint . --cache",
     "lint:fix": "pnpm run lint --fix",
-    "prepublishOnly": "nr build",
+  "prepublishOnly": "pnpm run build",
     "release": "bumpp && npm publish",
     "start": "esno src/index.ts",
     "test": "vitest",

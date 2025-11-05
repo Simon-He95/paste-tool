@@ -15,6 +15,12 @@ const SHARED_DOM_PARSER = typeof DOMParser !== 'undefined' ? new DOMParser() : n
 
 type TextMime = typeof TEXT_MIME_PRIORITY[number]
 
+export interface ClipboardTextPayload {
+  html: string | null
+  rtf: string | null
+  plain: string | null
+}
+
 class TextCollector {
   private readonly buckets = new Map<TextMime, string[]>()
 
@@ -27,20 +33,27 @@ class TextCollector {
     this.buckets.set(mime, [fragment])
   }
 
-  merge(): string | null {
-    for (const mime of TEXT_MIME_PRIORITY) {
-      const fragments = this.buckets.get(mime)
-      if (!fragments || fragments.length === 0)
-        continue
-      if (fragments.length === 1)
-        return fragments[0]
-
-      if (mime === 'text/html')
-        return combineHtmlFragments(fragments)
-      if (mime === 'text/rtf')
-        return combineRtfFragments(fragments)
-      return combinePlainTextFragments(fragments)
+  merge(): ClipboardTextPayload | null {
+    const payload: ClipboardTextPayload = {
+      html: null,
+      rtf: null,
+      plain: null,
     }
+
+    const htmlFragments = this.buckets.get(HTML_MIME)
+    if (htmlFragments && htmlFragments.length > 0)
+      payload.html = htmlFragments.length === 1 ? htmlFragments[0] : combineHtmlFragments(htmlFragments)
+
+    const rtfFragments = this.buckets.get(RTF_MIME)
+    if (rtfFragments && rtfFragments.length > 0)
+      payload.rtf = rtfFragments.length === 1 ? rtfFragments[0] : combineRtfFragments(rtfFragments)
+
+    const plainFragments = this.buckets.get(PLAIN_MIME)
+    if (plainFragments && plainFragments.length > 0)
+      payload.plain = plainFragments.length === 1 ? plainFragments[0] : combinePlainTextFragments(plainFragments)
+
+    if (payload.html !== null || payload.rtf !== null || payload.plain !== null)
+      return payload
 
     return null
   }
@@ -76,7 +89,7 @@ function hasClipboardType(
 export async function onPaste(
   isImage: boolean,
   event?: ClipboardEvent | null,
-): Promise<Blob | string> {
+): Promise<Blob | ClipboardTextPayload> {
   assertBrowserEnvironment()
 
   if (isImage) {
@@ -231,13 +244,21 @@ function selectPreferredImageType(types: readonly string[]): string | null {
   return null
 }
 
-async function extractText({ event }: { event?: ClipboardEvent | null }): Promise<string | null> {
+async function extractText({ event }: { event?: ClipboardEvent | null }): Promise<ClipboardTextPayload | null> {
+  const collector = new TextCollector()
   const clipboardData = event?.clipboardData
   if (clipboardData) {
     for (const mime of TEXT_MIME_PRIORITY) {
-      if (hasClipboardType(clipboardData.types, mime))
-        return clipboardData.getData(mime)
+      if (!hasClipboardType(clipboardData.types, mime))
+        continue
+      const fragment = clipboardData.getData(mime)
+      if (fragment)
+        collector.add(mime, fragment)
     }
+
+    const merged = collector.merge()
+    if (merged !== null)
+      return merged
   }
 
   if (typeof navigator === 'undefined' || !navigator.clipboard)
@@ -246,8 +267,6 @@ async function extractText({ event }: { event?: ClipboardEvent | null }): Promis
   const clipboard = navigator.clipboard as Clipboard & {
     read?: () => Promise<ClipboardItem[]>
   }
-
-  const collector = new TextCollector()
 
   if (typeof clipboard.read === 'function') {
     try {
@@ -281,18 +300,15 @@ async function extractText({ event }: { event?: ClipboardEvent | null }): Promis
   if (typeof clipboard.readText === 'function') {
     try {
       const text = await clipboard.readText()
-      collector.add(PLAIN_MIME, text)
+      if (text)
+        collector.add(PLAIN_MIME, text)
     }
     catch (error) {
       logClipboardWarning('navigator.clipboard.readText failed', error)
     }
   }
 
-  const merged = collector.merge()
-  if (merged !== null)
-    return merged
-
-  return null
+  return collector.merge()
 }
 
 function combineHtmlFragments(fragments: string[]): string {

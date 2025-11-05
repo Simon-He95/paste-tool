@@ -41,6 +41,7 @@
         <p class="hint">Multiple images are merged with inferred layout. Result below comes from <code>onPaste(true)</code>.</p>
         <div class="result image">
           <img v-if="imageUrl" :src="imageUrl" alt="Pasted preview" />
+          <p v-else-if="imageFailedText" class="placeholder">{{ imageFailedText }}</p>
           <p v-else class="placeholder">Paste one or more images here.</p>
         </div>
       </article>
@@ -53,6 +54,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue'
 import { onPaste } from '../../../src'
+import type { ClipboardTextPayload } from '../../../src'
 
 const textResult = ref('')
 const htmlPreview = ref('')
@@ -60,9 +62,10 @@ const imageUrl = ref<string | null>(null)
 const error = ref('')
 
 let objectUrl: string | null = null
-
+const imageFailedText = ref('')
 function resetError() {
   error.value = ''
+  imageFailedText.value = ''
 }
 
 async function handleTextPaste(event: ClipboardEvent) {
@@ -71,8 +74,10 @@ async function handleTextPaste(event: ClipboardEvent) {
 
   try {
     const result = await onPaste(false, event)
-    textResult.value = typeof result === 'string' ? result : ''
-    htmlPreview.value = event.clipboardData?.getData('text/html') ?? ''
+    if (isTextPayload(result)) {
+      textResult.value = result.plain ?? ''
+      htmlPreview.value = result.html ?? ''
+    }
   }
   catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -85,10 +90,19 @@ async function handleImagePaste(event: ClipboardEvent) {
 
   try {
     const payload = await onPaste(true, event)
-    if (payload instanceof Blob)
+    if (payload instanceof Blob) {
       assignImageBlob(payload)
-    else
-      throw new Error('Clipboard did not include image data.')
+      return
+    }
+
+    if (isTextPayload(payload)) {
+      clearImage()
+      debugger
+      imageFailedText.value = payload.plain ?? ''
+      return
+    }
+
+    throw new Error('No image data returned from onPaste.')
   }
   catch (err) {
     clearImage()
@@ -116,6 +130,10 @@ onBeforeUnmount(() => {
   if (objectUrl)
     URL.revokeObjectURL(objectUrl)
 })
+
+function isTextPayload(value: unknown): value is ClipboardTextPayload {
+  return typeof value === 'object' && value !== null && 'plain' in value
+}
 </script>
 
 <style scoped>
