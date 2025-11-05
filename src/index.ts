@@ -90,8 +90,11 @@ export async function onPaste(
     if (blobs.length === 0)
       throw new Error('No image data found in clipboard.')
 
-    if (blobs.length === 1)
-      return blobs[0]
+    if (blobs.length === 1) {
+      if (!layoutHtml)
+        return blobs[0]
+      return await mergeImages(blobs, layoutHtml)
+    }
 
     return await mergeImages(blobs, layoutHtml)
   }
@@ -413,6 +416,11 @@ async function mergeImages(blobs: Blob[], html: string | null): Promise<Blob> {
       throw new Error('Failed to access canvas 2D context.')
 
     ctx.clearRect(0, 0, layout.width, layout.height)
+    // Ensure transparent snapshots still render against a solid baseline.
+    ctx.save()
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, layout.width, layout.height)
+    ctx.restore()
 
     for (let index = 0; index < layout.positions.length; index++) {
       const { x, y } = layout.positions[index]

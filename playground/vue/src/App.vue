@@ -195,8 +195,10 @@ header p {
 .html-preview {
   padding: 1rem;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  background: #fff;
+  color: #111827;
   min-height: 120px;
+  overflow: auto;
 }
 
 .result.image {
