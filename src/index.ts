@@ -1,5 +1,18 @@
 /// <reference lib="dom" />
 
+import type { HtmlSnapshotOptions } from './htmlSnapshot'
+import type { LoadedBitmap } from './image-utils'
+import { renderHtmlFragmentToImage } from './htmlSnapshot'
+import {
+  canvasToBlob,
+  closeBitmaps,
+  createDrawingCanvas,
+  dataUrlToBlob,
+  isHtmlImageElement,
+  loadBitmap,
+
+} from './image-utils'
+
 const IMAGE_MIME_PREFIX = 'image/'
 const HTML_MIME = 'text/html'
 const RTF_MIME = 'text/rtf'
@@ -9,6 +22,7 @@ const TEXT_MIME_PRIORITY = [HTML_MIME, RTF_MIME, PLAIN_MIME] as const
 const IMAGE_TYPE_PREFERENCE = ['image/png', 'image/webp', 'image/jpeg']
 const HTML_BREAK_SPLIT_PATTERN = /<br\s*(?:\/\s*)?>/i
 const HTML_IMG_TAG_PATTERN = /<img\b/gi
+const INLINE_IMG_SRC_PATTERN = /<img[^>]*\ssrc=(['"])(.*?)\1/gi
 const LINE_BREAK_TEST_PATTERN = /[\r\n]/
 const LINE_BREAK_NORMALIZE_PATTERN = /\r?\n/g
 const SHARED_DOM_PARSER = typeof DOMParser !== 'undefined' ? new DOMParser() : null
@@ -86,14 +100,32 @@ function hasClipboardType(
  * @param isImage When true, resolves with an image {@link Blob}; otherwise returns formatted text.
  * @param event Optional `ClipboardEvent` from the paste handler to read synchronously available data.
  */
+export interface PasteOptions {
+  /**
+   * When true (default), HTML fragments are rasterized into images if the clipboard
+   * lacks explicit image blobs. Disable to skip the snapshot fallback for stricter
+   * performance budgets.
+   */
+  enableHtmlSnapshot?: boolean
+  /**
+   * Options forwarded to the HTML snapshot renderer.
+   */
+  htmlSnapshotOptions?: HtmlSnapshotOptions
+}
+
 export async function onPaste(
   isImage: boolean,
   event?: ClipboardEvent | null,
+  options: PasteOptions = {},
 ): Promise<Blob | ClipboardTextPayload> {
   assertBrowserEnvironment()
+  const {
+    enableHtmlSnapshot = true,
+    htmlSnapshotOptions,
+  } = options
 
   if (isImage) {
-    let payload = collectImagesFromEvent(event)
+    let payload = await collectImagesFromEvent(event)
     if (payload.blobs.length === 0)
       payload = await collectImagesFromNavigator()
 
@@ -101,6 +133,12 @@ export async function onPaste(
     const layoutHtml = payload.html
 
     if (blobs.length === 0) {
+      if (layoutHtml && enableHtmlSnapshot) {
+        const snapshotOptions = mergeHtmlSnapshotOptions(htmlSnapshotOptions)
+        const snapshot = await renderHtmlFragmentToImage(layoutHtml, snapshotOptions)
+        if (snapshot)
+          return snapshot
+      }
       const fallbackText = await extractText({ event })
       if (fallbackText !== null)
         return fallbackText
@@ -124,6 +162,21 @@ export async function onPaste(
 
 export default onPaste
 
+export async function renderHtmlToImage(html: string, options?: HtmlSnapshotOptions): Promise<Blob> {
+  const snapshotOptions = mergeHtmlSnapshotOptions(options)
+  const snapshot = await renderHtmlFragmentToImage(html, snapshotOptions)
+  if (snapshot)
+    return snapshot
+
+  throw new Error('Unable to render HTML to image.')
+}
+
+function mergeHtmlSnapshotOptions(options?: HtmlSnapshotOptions): HtmlSnapshotOptions {
+  if (options?.log)
+    return options
+  return { ...options, log: logClipboardWarning }
+}
+
 function assertBrowserEnvironment() {
   if (typeof window === 'undefined')
     throw new Error('Paste handling requires a browser environment.')
@@ -134,14 +187,16 @@ interface ClipboardImagePayload {
   html: string | null
 }
 
-function collectImagesFromEvent(event?: ClipboardEvent | null): ClipboardImagePayload {
+async function collectImagesFromEvent(event?: ClipboardEvent | null): Promise<ClipboardImagePayload> {
   const clipboardData = event?.clipboardData
   if (!clipboardData)
     return { blobs: [], html: null }
 
   const html = hasClipboardType(clipboardData.types, HTML_MIME) ? clipboardData.getData(HTML_MIME) : null
   const blobs = collectBlobsFromDataTransfer(clipboardData)
-  return { blobs, html }
+  const payload: ClipboardImagePayload = { blobs, html }
+  await hydrateInlineImages(payload)
+  return payload
 }
 
 async function collectImagesFromNavigator(): Promise<ClipboardImagePayload> {
@@ -177,7 +232,18 @@ async function collectImagesFromNavigator(): Promise<ClipboardImagePayload> {
     logClipboardWarning('navigator.clipboard.read failed', error)
   }
 
-  return { blobs, html }
+  const payload: ClipboardImagePayload = { blobs, html }
+  await hydrateInlineImages(payload)
+  return payload
+}
+
+async function hydrateInlineImages(payload: ClipboardImagePayload): Promise<void> {
+  if (payload.blobs.length > 0 || !payload.html)
+    return
+
+  const inlineBlobs = await extractInlineImagesFromHtml(payload.html)
+  if (inlineBlobs.length > 0)
+    payload.blobs.push(...inlineBlobs)
 }
 
 function collectBlobsFromDataTransfer(data: DataTransfer): Blob[] {
@@ -220,14 +286,22 @@ async function collectBlobsFromClipboardItem(item: ClipboardItem): Promise<Clipb
   let html: string | null = null
   const preferredImageType = selectPreferredImageType(item.types)
 
-  if (preferredImageType)
-    blobs.push(await item.getType(preferredImageType))
+  if (preferredImageType) {
+    try {
+      blobs.push(await item.getType(preferredImageType))
+    }
+    catch (error) {
+      logClipboardWarning(`ClipboardItem.getType failed for ${preferredImageType}`, error)
+    }
+  }
 
   for (const type of item.types) {
     if (type === HTML_MIME && !html)
       html = await (await item.getType(type)).text()
   }
-  return { blobs, html }
+  const payload: ClipboardImagePayload = { blobs, html }
+  await hydrateInlineImages(payload)
+  return payload
 }
 
 function selectPreferredImageType(types: readonly string[]): string | null {
@@ -239,6 +313,81 @@ function selectPreferredImageType(types: readonly string[]): string | null {
   for (const type of types) {
     if (type.startsWith(IMAGE_MIME_PREFIX))
       return type
+  }
+
+  return null
+}
+
+async function extractInlineImagesFromHtml(html: string): Promise<Blob[]> {
+  const sources = collectImageSourcesFromHtml(html)
+  if (sources.length === 0)
+    return []
+
+  const unique = new Set(sources)
+  const blobs: Blob[] = []
+  for (const source of unique) {
+    const blob = await resolveImageSourceToBlob(source)
+    if (blob)
+      blobs.push(blob)
+  }
+
+  return blobs
+}
+
+function collectImageSourcesFromHtml(html: string): string[] {
+  const sources: string[] = []
+  const doc = parseHtmlDocument(html)
+  if (doc) {
+    const images = doc.querySelectorAll('img[src]')
+    for (let index = 0; index < images.length; index++) {
+      const src = images[index].getAttribute('src')
+      if (src)
+        sources.push(src)
+    }
+  }
+
+  if (sources.length === 0) {
+    INLINE_IMG_SRC_PATTERN.lastIndex = 0
+    let match: RegExpExecArray | null
+    while (true) {
+      match = INLINE_IMG_SRC_PATTERN.exec(html)
+      if (!match)
+        break
+
+      const src = match[2]
+      if (src)
+        sources.push(src)
+    }
+  }
+
+  return sources
+}
+
+async function resolveImageSourceToBlob(src: string): Promise<Blob | null> {
+  if (src.startsWith('data:')) {
+    try {
+      return dataUrlToBlob(src)
+    }
+    catch (error) {
+      logClipboardWarning('Failed to parse data URI image from HTML fragment.', error)
+      return null
+    }
+  }
+
+  if (typeof fetch === 'function' && (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('blob:'))) {
+    try {
+      const response = await fetch(src)
+      if (!response.ok)
+        return null
+      const blob = await response.blob()
+      if (blob.type && blob.type.startsWith(IMAGE_MIME_PREFIX))
+        return blob
+      if (!blob.type && blob.size > 0)
+        return blob
+    }
+    catch (error) {
+      logClipboardWarning(`Failed to fetch image source ${src}`, error)
+    }
   }
 
   return null
@@ -454,86 +603,6 @@ async function mergeImages(blobs: Blob[], html: string | null): Promise<Blob> {
   }
 }
 
-type LoadedBitmap = ImageBitmap | HTMLImageElement
-
-function isHtmlImageElement(value: LoadedBitmap): value is HTMLImageElement {
-  return 'naturalWidth' in value
-}
-
-async function loadBitmap(blob: Blob): Promise<LoadedBitmap> {
-  if (typeof createImageBitmap === 'function')
-    return await createImageBitmap(blob)
-
-  return await blobToHtmlImage(blob)
-}
-
-async function blobToHtmlImage(blob: Blob): Promise<HTMLImageElement> {
-  return await new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob)
-    const image = new Image()
-    image.onload = () => {
-      URL.revokeObjectURL(url)
-      resolve(image)
-    }
-    image.onerror = (event) => {
-      URL.revokeObjectURL(url)
-      reject(event)
-    }
-    image.src = url
-  })
-}
-
-function createDrawingCanvas(width: number, height: number): HTMLCanvasElement | OffscreenCanvas {
-  if (typeof document !== 'undefined') {
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    return canvas
-  }
-
-  if (typeof OffscreenCanvas === 'function')
-    return new OffscreenCanvas(width, height)
-
-  throw new Error('Canvas rendering requires DOM or OffscreenCanvas support.')
-}
-
-async function canvasToBlob(canvas: HTMLCanvasElement | OffscreenCanvas, type: string): Promise<Blob> {
-  if ('convertToBlob' in canvas && typeof canvas.convertToBlob === 'function')
-    return await canvas.convertToBlob({ type })
-
-  const domCanvas = canvas as HTMLCanvasElement
-  return await new Promise<Blob>((resolve, reject) => {
-    if (typeof domCanvas.toBlob === 'function') {
-      domCanvas.toBlob((blob) => {
-        if (blob)
-          resolve(blob)
-        else
-          reject(new Error('Failed to export merged image.'))
-      }, type)
-      return
-    }
-
-    try {
-      const dataUrl = domCanvas.toDataURL(type)
-      resolve(dataUrlToBlob(dataUrl))
-    }
-    catch (error) {
-      reject(error)
-    }
-  })
-}
-
-function dataUrlToBlob(dataUrl: string): Blob {
-  const [meta, data] = dataUrl.split(',')
-  const mime = /data:([^;]+);/.exec(meta)?.[1] ?? 'image/png'
-  const binary = atob(data)
-  const buffer = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index++)
-    buffer[index] = binary.charCodeAt(index)
-
-  return new Blob([buffer], { type: mime })
-}
-
 interface ImageLayout {
   width: number
   height: number
@@ -696,13 +765,6 @@ function selectOutputMimeType(blobs: Blob[]): string {
 
 function sumCounts(values: number[]): number {
   return values.reduce((total, value) => total + value, 0)
-}
-
-function closeBitmaps(bitmaps: LoadedBitmap[]): void {
-  for (const bitmap of bitmaps) {
-    if ('close' in bitmap && typeof bitmap.close === 'function')
-      bitmap.close()
-  }
 }
 
 function logClipboardWarning(message: string, error: unknown) {

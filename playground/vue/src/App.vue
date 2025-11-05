@@ -89,7 +89,7 @@ async function handleImagePaste(event: ClipboardEvent) {
   resetError()
 
   try {
-    const payload = await onPaste(true, event)
+    const payload = await onPaste(true,)
     if (payload instanceof Blob) {
       assignImageBlob(payload)
       return

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-describe('should', () => {
-  it('exported', () => {
-    expect(1).toEqual(1)
+import { renderHtmlToImage } from '../src/index'
+
+const SAMPLE_TABLE_HTML = '<table cellspacing="0" cellpadding="0" style="border-collapse: collapse">\n<tbody>\n<tr>\n<td valign="top" style="width: 76.0px; height: 14.0px; border-style: solid; border-width: 1.0px 1.0px 1.0px 1.0px; border-color: #808080 #808080 #808080 #808080; padding: 4.0px 4.0px 4.0px 4.0px">\n<p style="margin: 0.0px 0.0px 0.0px 0.0px"><font face="PingFang SC" size="2" color="#000000" style="font: 10.0px \'PingFang SC\'; font-variant-ligatures: common-ligatures; color: #000000">\u81EA\u884C\u8F66</font></p>\n</td>\n<td valign="top" style="width: 73.0px; height: 14.0px; border-style: solid; border-width: 1.0px 1.0px 1.0px 1.0px; border-color: #808080 #808080 #808080 #808080; padding: 4.0px 4.0px 4.0px 4.0px">\n<p style="margin: 0.0px 0.0px 0.0px 0.0px"><font face="PingFang SC" size="2" color="#000000" style="font: 10.0px \'PingFang SC\'; font-variant-ligatures: common-ligatures; color: #000000">\u7535\u52A8</font></p>\n</td>\n</tr>\n<tr>\n<td valign="top" style="width: 76.0px; height: 13.0px; background-color: #f5f5f4; border-style: solid; border-width: 1.0px 1.0px 1.0px 1.0px; border-color: #808080 #808080 #808080 #808080; padding: 4.0px 4.0px 4.0px 4.0px">\n<p style="margin: 0.0px 0.0px 0.0px 0.0px"><font face="PingFang SC" size="2" color="#000000" style="font: 10.0px \'PingFang SC\'; font-variant-ligatures: common-ligatures; color: #000000">\u81EA\u884C\u8F66</font></p>\n</td>\n<td valign="top" style="width: 73.0px; height: 13.0px; background-color: #f5f5f4; border-style: solid; border-width: 1.0px 1.0px 1.0px 1.0px; border-color: #808080 #808080 #808080 #808080; padding: 4.0px 4.0px 4.0px 4.0px">\n<p style="margin: 0.0px 0.0px 0.0px 0.0px"><font face="PingFang SC" size="2" color="#000000" style="font: 10.0px \'PingFang SC\'; font-variant-ligatures: common-ligatures; color: #000000">\u624B\u52A8</font></p>\n</td>\n</tr>\n<tr>\n<td valign="top" style="width: 76.0px; height: 14.0px; border-style: solid; border-width: 1.0px 1.0px 1.0px 1.0px; border-color: #808080 #808080 #808080 #808080; padding: 4.0px 4.0px 4.0px 4.0px">\n<p style="margin: 0.0px 0.0px 0.0px 0.0px"><font face="PingFang SC" size="2" color="#000000" style="font: 10.0px \'PingFang SC\'; font-variant-ligatures: common-ligatures; color: #000000">\u6ED1\u677F\u8F66</font></p>\n</td>\n<td valign="top" style="width: 73.0px; height: 14.0px; border-style: solid; border-width: 1.0px 1.0px 1.0px 1.0px; border-color: #808080 #808080 #808080 #808080; padding: 4.0px 4.0px 4.0px 4.0px">\n<p style="margin: 0.0px 0.0px 0.0px 0.0px"><font face="PingFang SC" size="2" color="#000000" style="font: 10.0px \'PingFang SC\'; font-variant-ligatures: common-ligatures; color: #000000">\u7535\u52A8</font></p>\n</td>\n</tr>\n</tbody>\n</table>\n'
+
+describe('renderHtmlToImage', () => {
+  it('converts complex table markup into an image blob', async () => {
+    const blob = await renderHtmlToImage(SAMPLE_TABLE_HTML)
+    expect(blob).toBeInstanceOf(Blob)
+    expect(blob.type.startsWith('image/')).toBe(true)
+    expect(blob.size).toBeGreaterThan(0)
   })
 })

@@ -89,6 +89,14 @@ When multiple images are detected, the library infers the clipboard layout (tabl
 
 If no image blobs are available (some paste sources expose images as HTML/text), `onPaste(true, ...)` will return the `ClipboardTextPayload` instead — so your consumer code can gracefully fall back to inserting formatted text.
 
+Need tighter control? Pass an optional third argument:
+
+```ts
+const blob = await onPaste(true, event, {
+  enableHtmlSnapshot: false, // skip HTML→image rasterization when performance is critical
+})
+```
+
 ### Handle Image Paste Fallback
 
 Some environments (for example remote desktops or certain web apps) surface images as formatted text. You can detect that case and reuse the text payload without writing additional clipboard access logic:
@@ -141,10 +149,18 @@ This launches Vite on `http://localhost:5173`, where you can paste rich text or 
 
 ## API
 
-`onPaste(isImage: boolean, event?: ClipboardEvent | null): Promise<Blob | ClipboardTextPayload>`
+`onPaste(isImage: boolean, event?: ClipboardEvent | null, options?: PasteOptions): Promise<Blob | ClipboardTextPayload>`
 
 - `isImage`: `true` to request image blobs, `false` for text.
 - `event`: optional paste event, used to synchronously access clipboard data when available.
+- `options`: optional configuration object.
+
+```ts
+interface PasteOptions {
+  enableHtmlSnapshot?: boolean // default true; rasterize HTML when blobs are missing
+  htmlSnapshotOptions?: HtmlSnapshotOptions // forwarded to renderHtmlToImage
+}
+```
 
 ```ts
 interface ClipboardTextPayload {
@@ -158,6 +174,7 @@ interface ClipboardTextPayload {
 }
 ```
 
+`renderHtmlToImage(html: string, options?: HtmlSnapshotOptions): Promise<Blob>` converts arbitrary HTML fragments into an image. Supply `options.log` to customize error reporting.
 Rejected promises carry an error explaining why no data was found.
 
 ## FAQ
