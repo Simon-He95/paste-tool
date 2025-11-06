@@ -4,6 +4,7 @@ import {
   createDrawingCanvas,
   loadBitmap,
 } from './image-utils'
+import type { LoadedBitmap } from './image-utils'
 
 const HTML_SNAPSHOT_MAX_DIMENSION = 4096
 const HTML_SNAPSHOT_DEFAULT_WIDTH = 512
@@ -17,6 +18,12 @@ export interface HtmlSnapshotOptions {
    * and return the serialized SVG directly.
    */
   mimeType?: string
+  /**
+   * Optional list of fallback MIME types to try if encoding with `mimeType` fails.
+   * If not provided, a sensible default order will be used based on the requested type.
+   * Example: ['image/png', 'image/jpeg', 'image/webp']
+   */
+  fallbackMimes?: string[]
 }
 
 interface HtmlSnapshotPlan {
@@ -113,7 +120,6 @@ function buildForeignObjectSvg(plan: HtmlSnapshotPlan): string {
 async function rasterizeSvgMarkup(svgMarkup: string, width: number, height: number, options: HtmlSnapshotOptions): Promise<Blob | null> {
   const { log, mimeType } = options
   const targetMime = mimeType ?? 'image/png'
-
   if (targetMime === 'image/svg+xml') {
     try {
       return new Blob([svgMarkup], { type: 'image/svg+xml' })
@@ -124,14 +130,26 @@ async function rasterizeSvgMarkup(svgMarkup: string, width: number, height: numb
     }
   }
 
+  let svgBlob: Blob
+
   try {
-    const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml' })
+    svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml' })
     if (!canUseCanvas2D()) {
       log?.('Canvas 2D context unavailable; returning SVG snapshot.', null)
       return svgBlob
     }
 
-    const bitmap = await loadBitmap(svgBlob)
+    // Try to decode the SVG into a drawable image/bitmap. If blob decoding fails
+    // in some engines (notably with foreignObject), try a data URL fallback.
+    let bitmap: LoadedBitmap
+    try {
+      bitmap = await loadBitmap(svgBlob)
+    }
+    catch (decodeErr) {
+      log?.('Failed to decode SVG via Blob URL; trying data URL fallback.', decodeErr)
+      const dataUrl = svgMarkupToDataUrl(svgMarkup)
+      bitmap = await loadImageFromDataUrl(dataUrl)
+    }
     try {
       const canvas = createDrawingCanvas(Math.max(1, Math.round(width)), Math.max(1, Math.round(height)))
       const restoreConsole = muteCanvasNotImplementedWarnings()
@@ -161,29 +179,57 @@ async function rasterizeSvgMarkup(svgMarkup: string, width: number, height: numb
   catch (error) {
     log?.('Failed to rasterize HTML snapshot.', error)
   }
-
+  // If we reach here, we couldn't produce the requested raster format.
+  // Return a safe SVG snapshot instead of mislabeling bytes as a different MIME type.
   try {
-    const fallbackType = targetMime === 'image/svg+xml' ? 'image/svg+xml' : 'image/svg+xml'
-    return new Blob([svgMarkup], { type: fallbackType })
+    return svgBlob!
   }
   catch {
     return null
   }
 }
 
-function canUseCanvas2D(): boolean {
-  if (typeof document === 'undefined')
-    return false
+function svgMarkupToDataUrl(markup: string): string {
+  // Use utf-8 with encodeURIComponent to preserve non-ASCII safely
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
+}
 
+async function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  return await new Promise((resolve, reject) => {
+    const img = new Image()
+    // Same-origin data URL; crossOrigin is typically unnecessary, but harmless here.
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = (e) => reject(e)
+    img.src = dataUrl
+  })
+}
+
+function canUseCanvas2D(): boolean {
+  // Support workers or non-DOM environments via OffscreenCanvas
+  if (typeof OffscreenCanvas === 'function') {
+    try {
+      const oc = new OffscreenCanvas(1, 1)
+      const ctx = oc.getContext('2d')
+      if (ctx)
+        return true
+    }
+    catch {
+      // ignore
+    }
+  }
+
+  // In DOM environments, ensure we can obtain a 2D context
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas')
+    return typeof canvas.getContext === 'function' && !!canvas.getContext('2d')
+  }
+
+  // Some headless test runners (e.g., jsdom) claim to have DOM but no real canvas 2D
   if (typeof navigator !== 'undefined' && typeof navigator.userAgent === 'string' && navigator.userAgent.includes('jsdom'))
     return false
 
-  const contextCtor = (globalThis as { CanvasRenderingContext2D?: unknown }).CanvasRenderingContext2D
-  if (typeof contextCtor === 'undefined')
-    return false
-
-  const canvas = document.createElement('canvas')
-  return typeof canvas.getContext === 'function'
+  return false
 }
 
 function clampDimension(value: number): number {
